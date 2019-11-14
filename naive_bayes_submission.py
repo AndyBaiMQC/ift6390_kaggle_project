@@ -1,7 +1,29 @@
-#naive bayes classifier usnig bag of words
+#naive bayes classifier using bag of words
 #phase 1: can only uses standard python package + numpy + nltk
 
-#Source: the idea of upweighting title words comes from Ko_2002.pdf (Improving text categorization using the importance of sentences)
+"""
+Read me
+
+Running this file will recreate the submission on Kaggle.
+
+It may be necessary to modify the paths to access the datasets. By default, they are
+“reddit-comments/data_train.pkl” and “reddit-comments/data_test.pkl".
+
+This file contains one class: BayesClassifier
+
+BayesClassifier contains 6 functions:
+    * __init__
+    * preprocess
+        Transform texts into list of cleaned words (use stop words, stemmer, etc)
+    * fit
+        Compute the bag of words and the log probabilities
+    * predict
+        Compute the categories that maximizes P(x|y)*P(y)
+    * score
+        Compute the number of correctly classified / number of samples to classify
+    * create_submission
+        Create the csv file for Kaggle.
+"""
 
 import numpy as np
 import nltk
@@ -17,13 +39,12 @@ nltk.download('wordnet')
 
 class BayesClassifier:
 
-    def __init__(self, X, y, laplace_cst=0, stem_method=None, upweight_train=0, upweight_test=0):
+    def __init__(self, X, y, laplace_cst=0, stem_method=None, upweight=4):
         self.X_train = copy.deepcopy(X)
         self.y_train = copy.deepcopy(y)
         self.laplace_cst = laplace_cst
         self.stem_method = stem_method
-        self.upweight_train = upweight_train
-        self.upweight_test = upweight_test
+        self.upweight = upweight
         self.m = len(set(y)) #number of classes
         self.categories = list(set(y))
         self.dict_category_index = {k: v for v, k in enumerate(self.categories)} #dict_category_index['cat'] == self.categories.index('cat') but quicker
@@ -37,17 +58,14 @@ class BayesClassifier:
                 X[i] = [self.stem_method(word) for word in nltk.word_tokenize(X[i]) if
                         word not in stop_words]
             else:
-                #X[i] = re.sub(r'http\S+', '', X[i]) #remove links
                 X[i] = re.sub('\W+',' ', X[i] ) #remove special caracters
-                #X[i] = ' '.join([word for word in X[i].split() if len(word) > 2]) # remove words that are 1 or 2 characters
 
                 #upweighting title words
+                #Source: the idea of upweighting title words comes from "Improving text categorization using the importance of sentences" (Ko, 2002)
                 for word in X[i].split(' '):
                     cats = [c.lower() for c in self.categories]
-                    if word.lower() == self.y_train[i].lower() and X == self.X_train:
-                        X[i] += (' ' + word)*self.upweight_train
-                    elif word.lower() in cats and X != self.X_train:
-                        X[i] += (' ' + word)*self.upweight_test
+                    if word.lower() in cats and X != self.X_train:
+                        X[i] += (' ' + word)*self.upweight
 
                 X[i] = [SnowballStemmer("english").stem(WordNetLemmatizer().lemmatize(word)) for word in nltk.word_tokenize(X[i]) if
                         word not in stop_words]
@@ -62,7 +80,7 @@ class BayesClassifier:
         self.dict_word_index = {k: v for v, k in enumerate(unique_words)} #word_index['word'] == unique_words.index('word') but quicker
 
         ## Create bag of words
-        # each columns is a categories/label/subreddit. label_j = self.categories[j]
+        # each columns is a category/subreddit. label_j = self.categories[j]
         # each row is a word. word_i = unique_words[i]
         # bag[i,j] = number of appearance of word i in category j
         bag = np.zeros((len(unique_words), self.m))
@@ -82,9 +100,11 @@ class BayesClassifier:
 
     def predict(self, X_test):
         # y_predicted for x is the y that maximizes P(x|y)*P(y)
+
         # P(x|y) = P(word_1,word_2,...,wosrd_n|y) = P(word_1|y)*P(word_2|y)*...*P(word_n|y)
         # P(word_i|y_j) = self.probability_of_word_given_label[i,j]
         # P(y) = self.priors
+
         predictions = []
         X_test = copy.deepcopy(X_test)
         self.preprocess(X_test)
@@ -106,7 +126,7 @@ class BayesClassifier:
 
             words_prob = words_prob[1:] #remove placeholder
 
-            #log(P(sample|y_j)) = log(P(y_j)) + sum_i log(P(word|y_j))
+            # log(P(sample|y_j)) = log(P(y_j)) + sum_i log(P(word_i|y_j))
             log_prob_sample_given_label = np.sum(words_prob, axis=0) + np.log(self.priors)
             pred_index = np.argmax(log_prob_sample_given_label)
             predictions.append(self.categories[pred_index])
@@ -136,13 +156,14 @@ class BayesClassifier:
 if __name__ == "__main__":
     X, y = np.load("reddit-comments/data_train.pkl", allow_pickle=True)
 
-    idx = np.random.permutation(len(y))
+    idx = np.random.permutation(len(y)) #shuffle index
     X = list(np.array(X)[idx])
     y = np.array(y)[idx]
 
     X_test = np.load("reddit-comments/data_test.pkl", allow_pickle=True)
 
-    model = BayesClassifier(X, y, laplace_cst=0.02, stem_method=None, upweight_train=0, upweight_test=4)
+    model = BayesClassifier(X, y, laplace_cst=0.02)
     model.fit()
     prediction = model.predict(X_test)
     model.create_submission(prediction)
+
